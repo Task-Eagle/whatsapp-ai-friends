@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  MessageSquare, Phone, Video, Search, Paperclip,
+  Phone, Video, Search, Paperclip,
   Send, User, Sparkles, Trash2, UserPlus, Info, PhoneOff,
   Circle, Shield, Sun, Moon, LogOut, Bot, X, Check, CheckCheck, Volume2, VolumeX
 } from 'lucide-react';
