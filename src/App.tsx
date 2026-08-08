@@ -1,19 +1,51 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
-  MessageSquare, Phone, Video, MoreVertical, Search, Paperclip,
-  Smile, Mic, Send, User, Plus, Settings, Check, CheckCheck,
-  Moon, Sun, Volume2, VolumeX, Image as ImageIcon, X, LogOut,
-  Bot, Sparkles, Trash2, UserPlus, Info, PhoneOff, ArrowLeft,
-  Circle, Shield, Key
+  MessageSquare, Phone, Video, Search, Paperclip,
+  Send, User, Sparkles, Trash2, UserPlus, Info, PhoneOff,
+  Circle, Shield, Sun, Moon, LogOut, Bot, X, Check, CheckCheck, Volume2, VolumeX
 } from 'lucide-react';
 
-// Default Gemini API configuration
+// Default Gemini API configuration for Vite
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
-
 const MODEL_NAME = "gemini-2.5-flash";
 
+// Type Interfaces
+interface Friend {
+  id: string;
+  name: string;
+  avatar: string;
+  emoji: string;
+  status: string;
+  tagline: string;
+  personality: string;
+  greeting: string;
+  themeColor: string;
+}
+
+interface Message {
+  id: string;
+  sender: 'user' | 'friend';
+  text: string;
+  image?: string | null;
+  timestamp: string;
+  status: 'read';
+}
+
+interface UserAccount {
+  id: string;
+  username: string;
+  avatar: string;
+  joinedAt: string;
+}
+
+interface ActiveCall {
+  friend: Friend;
+  type: 'audio' | 'video';
+  status: 'ringing' | 'connected';
+}
+
 // Initial standard AI Friends
-const DEFAULT_FRIENDS = [
+const DEFAULT_FRIENDS: Friend[] = [
   {
     id: 'aria-1',
     name: 'Aria',
@@ -61,13 +93,18 @@ const DEFAULT_FRIENDS = [
 ];
 
 // Retry fetch with exponential backoff for Gemini API
-async function callGeminiAPI(messages, systemInstruction, base64Image = null, maxRetries = 5) {
+async function callGeminiAPI(
+  messages: Message[],
+  systemInstruction: string,
+  base64Image: string | null = null,
+  maxRetries = 5
+): Promise<string> {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${API_KEY}`;
   
   // Format history into Gemini API structure
   const formattedContents = messages.map((msg, index) => {
     const role = msg.sender === 'user' ? 'user' : 'model';
-    const parts = [{ text: msg.text }];
+    const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [{ text: msg.text }];
     
     // Attach image to the latest user message if present
     if (msg.sender === 'user' && index === messages.length - 1 && base64Image) {
@@ -119,21 +156,22 @@ async function callGeminiAPI(messages, systemInstruction, base64Image = null, ma
       delay *= 2;
     }
   }
+  return "Sorry, connection failed.";
 }
 
 export default function App() {
   // Account State
-  const [accounts, setAccounts] = useState(() => {
+  const [accounts, setAccounts] = useState<UserAccount[]>(() => {
     const saved = localStorage.getItem('wa_ai_accounts');
     return saved ? JSON.parse(saved) : [];
   });
-  const [currentUser, setCurrentUser] = useState(() => {
+  const [currentUser, setCurrentUser] = useState<UserAccount | null>(() => {
     const saved = localStorage.getItem('wa_ai_current_user');
     return saved ? JSON.parse(saved) : null;
   });
 
   // Auth UI State
-  const [authMode, setAuthMode] = useState('login'); // 'login' | 'register'
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [usernameInput, setUsernameInput] = useState('');
   const [avatarInput, setAvatarInput] = useState('🧑‍💻');
   const [authError, setAuthError] = useState('');
@@ -141,22 +179,22 @@ export default function App() {
   // App Theme State
   const [darkMode, setDarkMode] = useState(true);
 
-  // Chat Data State (Keyed by userId)
-  const [friends, setFriends] = useState(DEFAULT_FRIENDS);
-  const [activeFriendId, setActiveFriendId] = useState(DEFAULT_FRIENDS[0].id);
-  const [chats, setChats] = useState({}); // { [friendId]: [messages] }
+  // Chat Data State
+  const [friends, setFriends] = useState<Friend[]>(DEFAULT_FRIENDS);
+  const [activeFriendId, setActiveFriendId] = useState<string>(DEFAULT_FRIENDS[0].id);
+  const [chats, setChats] = useState<Record<string, Message[]>>({});
   const [searchQuery, setSearchQuery] = useState('');
   
   // Active Chat State
   const [inputText, setInputText] = useState('');
-  const [selectedImage, setSelectedImage] = useState(null);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isTyping, setIsTyping] = useState(false);
-  const [speakingMsgId, setSpeakingMsgId] = useState(null);
+  const [speakingMsgId, setSpeakingMsgId] = useState<string | null>(null);
 
   // Modals & Panels
   const [showAddFriend, setShowAddFriend] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
-  const [activeCall, setActiveCall] = useState(null); // { friend, type: 'audio' | 'video', callTime: number }
+  const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
 
   // New Custom Friend State
   const [newFriend, setNewFriend] = useState({
@@ -167,8 +205,8 @@ export default function App() {
     emoji: '🤖'
   });
 
-  const chatEndRef = useRef(null);
-  const fileInputRef = useRef(null);
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Sync Accounts & Active User
   useEffect(() => {
@@ -178,7 +216,6 @@ export default function App() {
   useEffect(() => {
     if (currentUser) {
       localStorage.setItem('wa_ai_current_user', JSON.stringify(currentUser));
-      // Load user specific chats & custom friends
       const userChatsKey = `wa_ai_chats_${currentUser.id}`;
       const userFriendsKey = `wa_ai_friends_${currentUser.id}`;
       
@@ -194,8 +231,7 @@ export default function App() {
       if (savedChats) {
         setChats(JSON.parse(savedChats));
       } else {
-        // Initialize default greetings
-        const initialChats = {};
+        const initialChats: Record<string, Message[]> = {};
         DEFAULT_FRIENDS.forEach(f => {
           initialChats[f.id] = [{
             id: 'init-' + f.id,
@@ -232,7 +268,7 @@ export default function App() {
   }, [chats, activeFriendId, isTyping]);
 
   // Handle Account Authentication
-  const handleAuth = (e) => {
+  const handleAuth = (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
     const trimmed = usernameInput.trim();
@@ -247,7 +283,7 @@ export default function App() {
         setAuthError('Username already taken. Please choose another.');
         return;
       }
-      const newUser = {
+      const newUser: UserAccount = {
         id: 'usr_' + Date.now(),
         username: trimmed,
         avatar: avatarInput,
@@ -277,8 +313,8 @@ export default function App() {
   const activeMessages = (activeFriend && chats[activeFriend.id]) || [];
 
   // Image Upload handler
-  const handleImageSelect = (e) => {
-    const file = e.target.files[0];
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
     if (file) {
       if (file.size > 4 * 1024 * 1024) {
         alert('Please choose an image under 4MB');
@@ -286,19 +322,21 @@ export default function App() {
       }
       const reader = new FileReader();
       reader.onloadend = () => {
-        setSelectedImage(reader.result);
+        if (typeof reader.result === 'string') {
+          setSelectedImage(reader.result);
+        }
       };
       reader.readAsDataURL(file);
     }
   };
 
   // Send Message Logic
-  const handleSendMessage = async (e) => {
+  const handleSendMessage = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if ((!inputText.trim() && !selectedImage) || isTyping) return;
 
     const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const userMsg = {
+    const userMsg: Message = {
       id: 'msg-' + Date.now(),
       sender: 'user',
       text: inputText.trim(),
@@ -307,14 +345,12 @@ export default function App() {
       status: 'read'
     };
 
-    // Append to active chat
     const updatedHistory = [...activeMessages, userMsg];
     setChats(prev => ({
       ...prev,
       [activeFriend.id]: updatedHistory
     }));
 
-    const currentInputText = inputText;
     const currentImg = selectedImage;
 
     setInputText('');
@@ -322,14 +358,13 @@ export default function App() {
     setIsTyping(true);
 
     try {
-      // API payload excludes frontend UI metadata
       const responseText = await callGeminiAPI(
         updatedHistory,
         activeFriend.personality,
         currentImg
       );
 
-      const aiMsg = {
+      const aiMsg: Message = {
         id: 'ai-' + Date.now(),
         sender: 'friend',
         text: responseText,
@@ -341,8 +376,8 @@ export default function App() {
         ...prev,
         [activeFriend.id]: [...(prev[activeFriend.id] || []), aiMsg]
       }));
-    } catch (err) {
-      const errorMsg = {
+    } catch {
+      const errorMsg: Message = {
         id: 'err-' + Date.now(),
         sender: 'friend',
         text: "⚠️ Oops! I had trouble connecting. Please check your Gemini API key or try again in a moment.",
@@ -359,7 +394,7 @@ export default function App() {
   };
 
   // Text to Speech
-  const toggleSpeech = (text, msgId) => {
+  const toggleSpeech = (text: string, msgId: string) => {
     if ('speechSynthesis' in window) {
       if (speakingMsgId === msgId) {
         window.speechSynthesis.cancel();
@@ -380,11 +415,11 @@ export default function App() {
   };
 
   // Create Custom Friend
-  const handleCreateFriend = (e) => {
+  const handleCreateFriend = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newFriend.name.trim() || !newFriend.personality.trim()) return;
 
-    const created = {
+    const created: Friend = {
       id: 'custom-' + Date.now(),
       name: newFriend.name.trim(),
       avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(newFriend.name)}`,
@@ -419,13 +454,11 @@ export default function App() {
     });
   };
 
-  // Filtered Friends list
   const filteredFriends = friends.filter(f =>
     f.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     f.tagline.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // AUTHENTICATION SCREEN (If no current user)
   if (!currentUser) {
     return (
       <div className={`min-h-screen w-full flex items-center justify-center p-4 transition-colors duration-200 ${
@@ -434,7 +467,6 @@ export default function App() {
         <div className={`w-full max-w-md rounded-2xl p-8 shadow-2xl border ${
           darkMode ? 'bg-[#111b21] border-slate-800' : 'bg-white border-slate-200'
         }`}>
-          {/* Header */}
           <div className="text-center mb-8">
             <div className="w-16 h-16 bg-[#00a884] rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-[#00a884]/20">
               <Bot className="w-10 h-10 text-white" />
@@ -453,7 +485,6 @@ export default function App() {
             </div>
           )}
 
-          {/* Auth Form */}
           <form onSubmit={handleAuth} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold uppercase text-slate-400 mb-2">Username</label>
@@ -505,7 +536,6 @@ export default function App() {
             </button>
           </form>
 
-          {/* Switch Mode Toggle */}
           <div className="mt-6 text-center pt-4 border-t border-slate-800/50">
             {authMode === 'login' ? (
               <p className="text-xs text-slate-400">
@@ -541,16 +571,14 @@ export default function App() {
       darkMode ? 'bg-[#111b21] text-slate-100' : 'bg-[#f0f2f5] text-slate-800'
     }`}>
 
-      {/* ==================== LEFT SIDEBAR ==================== */}
+      {/* LEFT SIDEBAR */}
       <div className={`w-full md:w-[380px] lg:w-[420px] flex flex-col h-full shrink-0 border-r transition-all ${
         darkMode ? 'bg-[#111b21] border-[#222d34]' : 'bg-white border-slate-200'
       }`}>
 
-        {/* Sidebar Header */}
         <div className={`p-3 px-4 flex items-center justify-between border-b ${
           darkMode ? 'bg-[#202c33] border-[#222d34]' : 'bg-[#f0f2f5] border-slate-200'
         }`}>
-          {/* User Profile Summary */}
           <div
             onClick={() => setShowProfile(true)}
             className="flex items-center gap-3 cursor-pointer group"
@@ -566,7 +594,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* Action Tools */}
           <div className="flex items-center gap-1 text-slate-400">
             <button
               onClick={() => setDarkMode(!darkMode)}
@@ -592,7 +619,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* Search Bar */}
         <div className="p-2 px-3">
           <div className={`flex items-center gap-3 px-3 py-1.5 rounded-lg text-sm ${
             darkMode ? 'bg-[#202c33] text-slate-200' : 'bg-slate-100 text-slate-700'
@@ -611,7 +637,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* AI Friends Chat List */}
         <div className="flex-1 overflow-y-auto divide-y divide-slate-800/20">
           {filteredFriends.length === 0 ? (
             <div className="p-8 text-center text-slate-500 text-xs">
@@ -633,7 +658,6 @@ export default function App() {
                       : darkMode ? 'hover:bg-[#202c33]' : 'hover:bg-slate-100'
                   }`}
                 >
-                  {/* Avatar */}
                   <div className="relative shrink-0">
                     <img
                       src={friend.avatar}
@@ -643,7 +667,6 @@ export default function App() {
                     <span className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-emerald-500 border-2 border-[#111b21] rounded-full" />
                   </div>
 
-                  {/* Details */}
                   <div className="flex-1 min-w-0">
                     <div className="flex justify-between items-baseline mb-0.5">
                       <h3 className="text-sm font-semibold truncate flex items-center gap-1.5">
@@ -674,21 +697,19 @@ export default function App() {
           )}
         </div>
 
-        {/* Footer info badge */}
         <div className={`p-2 px-4 border-t text-[11px] text-center text-slate-500 flex items-center justify-between ${
           darkMode ? 'bg-[#111b21] border-[#222d34]' : 'bg-slate-50 border-slate-200'
         }`}>
           <span className="flex items-center gap-1">
             <Shield className="w-3 h-3 text-[#00a884]" /> Account: <strong className="text-slate-300">{currentUser.username}</strong>
           </span>
-          <span className="text-slate-400">Gemini 2.5 Active</span>
+          <span className="text-slate-400">Gemini Active</span>
         </div>
       </div>
 
-      {/* ==================== MAIN CHAT WINDOW ==================== */}
+      {/* MAIN CHAT WINDOW */}
       <div className="flex-1 flex flex-col h-full bg-[#0b141a] relative overflow-hidden">
 
-        {/* WhatsApp Background Texture Overlay */}
         <div
           className="absolute inset-0 opacity-[0.04] pointer-events-none"
           style={{
@@ -697,7 +718,6 @@ export default function App() {
           }}
         />
 
-        {/* Active Chat Header */}
         <div className={`p-3 px-4 flex items-center justify-between z-10 border-b shadow-sm ${
           darkMode ? 'bg-[#202c33] border-[#222d34]' : 'bg-[#f0f2f5] border-slate-200'
         }`}>
@@ -755,9 +775,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* Message Stream */}
         <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-3 z-10">
-          {/* Encryption / System Badge */}
           <div className="text-center my-2">
             <span className={`inline-block px-3 py-1.5 rounded-lg text-[11px] max-w-md ${
               darkMode ? 'bg-[#182229] text-amber-200/80 border border-amber-500/10' : 'bg-amber-50 text-amber-900 border border-amber-200'
@@ -780,19 +798,16 @@ export default function App() {
                       ? 'bg-[#202c33] text-slate-100 rounded-tl-none'
                       : 'bg-white text-slate-800 rounded-tl-none'
                 }`}>
-                  {/* Optional Attached Image */}
                   {msg.image && (
                     <div className="mb-2 rounded-lg overflow-hidden max-h-60">
                       <img src={msg.image} alt="Attachment" className="w-full h-full object-cover" />
                     </div>
                   )}
 
-                  {/* Message Text */}
                   <div className="text-xs md:text-sm whitespace-pre-wrap leading-relaxed pr-10">
                     {msg.text}
                   </div>
 
-                  {/* Bubble Footer: Time & Actions */}
                   <div className="flex items-center justify-end gap-1.5 mt-1 text-[10px] text-slate-300/80">
                     {!isUser && (
                       <button
@@ -817,7 +832,6 @@ export default function App() {
             );
           })}
 
-          {/* Typing Indicator Bubble */}
           {isTyping && (
             <div className="flex items-start gap-2">
               <div className={`px-4 py-3 rounded-2xl rounded-tl-none shadow-sm flex items-center gap-1.5 ${
@@ -833,7 +847,6 @@ export default function App() {
           <div ref={chatEndRef} />
         </div>
 
-        {/* Selected Image Preview Bar */}
         {selectedImage && (
           <div className={`p-2 px-4 z-10 flex items-center justify-between border-t ${
             darkMode ? 'bg-[#182229] border-[#222d34]' : 'bg-slate-100 border-slate-300'
@@ -851,14 +864,12 @@ export default function App() {
           </div>
         )}
 
-        {/* Message Input Box */}
         <form
           onSubmit={handleSendMessage}
           className={`p-3 px-4 z-10 flex items-center gap-2 border-t ${
             darkMode ? 'bg-[#202c33] border-[#222d34]' : 'bg-[#f0f2f5] border-slate-200'
           }`}
         >
-          {/* File Attachment Button */}
           <input
             type="file"
             ref={fileInputRef}
@@ -875,7 +886,6 @@ export default function App() {
             <Paperclip className="w-5 h-5" />
           </button>
 
-          {/* Textarea Input */}
           <div className={`flex-1 flex items-center rounded-xl px-4 py-2 ${
             darkMode ? 'bg-[#2a3942] text-white' : 'bg-white text-slate-800'
           }`}>
@@ -888,7 +898,6 @@ export default function App() {
             />
           </div>
 
-          {/* Send Button */}
           <button
             type="submit"
             disabled={(!inputText.trim() && !selectedImage) || isTyping}
@@ -903,7 +912,7 @@ export default function App() {
         </form>
       </div>
 
-      {/* ==================== MODAL: ADD CUSTOM AI FRIEND ==================== */}
+      {/* MODAL: ADD CUSTOM AI FRIEND */}
       {showAddFriend && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className={`w-full max-w-md rounded-2xl p-6 shadow-2xl border ${
@@ -984,7 +993,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ==================== SIMULATED VOICE / VIDEO CALL MODAL ==================== */}
+      {/* SIMULATED VOICE / VIDEO CALL MODAL */}
       {activeCall && (
         <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-50 flex flex-col items-center justify-between p-8 text-white">
           <div className="text-center mt-8">
@@ -1013,7 +1022,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ==================== MODAL: PROFILE & SETTINGS ==================== */}
+      {/* MODAL: PROFILE & SETTINGS */}
       {showProfile && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className={`w-full max-w-sm rounded-2xl p-6 shadow-2xl border ${
